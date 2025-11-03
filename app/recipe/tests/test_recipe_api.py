@@ -6,7 +6,8 @@ from django.urls import reverse
 
 
 from rest_framework import status 
-from rest_framework import APIClient 
+from rest_framework.test import APIClient
+ 
 
 from core.models import Recipe
 
@@ -80,5 +81,5 @@ class PrivateRecipeApiTests(TestCase):
 
         recipes = Recipe.objects.filter(user=self.user)
         serializer = RecipeSerializer(recipes, many=True)
-        self.assertEqual(res.status.code, status.HTTP_200_OK)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data, serializer.data)
