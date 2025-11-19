@@ -1,11 +1,11 @@
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
-from django.urls import reverse 
+from django.urls import reverse
+
 
 class AdminSiteTests(TestCase):
 
     def setUp(self):
-        
         self.client = Client()
         User = get_user_model()
         self.admin_user, created = User.objects.get_or_create(
@@ -41,5 +41,3 @@ class AdminSiteTests(TestCase):
         res = self.client.get(url)
 
         self.assertEqual(res.status_code, 200)
-
-
