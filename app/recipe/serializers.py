@@ -1,4 +1,3 @@
-from wsgiref.util import request_uri
 
 from rest_framework import serializers
 from rest_framework.authentication import TokenAuthentication

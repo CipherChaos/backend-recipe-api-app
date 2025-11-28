@@ -42,7 +42,7 @@ def create_recipe(user, **params):
         'time_minutes': 22,
         'price': Decimal('5.25'),
         'description': 'Sample description',
-        'link': 'http://example.com/recipe.pdf'
+        'link': 'https://example.com/recipe.pdf'
     }
 
     defaults.update(params)
@@ -54,6 +54,17 @@ def create_recipe(user, **params):
 def create_user(**params):
     User = get_user_model()
     return User.objects.create_user(**params)
+
+
+class BaseRecipeAuthentication(TestCase):
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            'user@example.com',
+            'testpass123',
+        )
+        self.client.force_authenticate(self.user)
 
 
 class PublicRecipeApiTests(TestCase):
@@ -68,15 +79,28 @@ class PublicRecipeApiTests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
-class PrivateRecipeApiTests(TestCase):
+class PrivateRecipeApiTests(BaseRecipeAuthentication):
 
-    def setUp(self):
-        self.client = APIClient()
-        self.user = get_user_model().objects.create_user(
-            'user@example.com',
-            'testpass123',
-        )
-        self.client.force_authenticate(self.user)
+    # helper functions
+
+    def add_tag(self, recipe, name):
+        tag = Tag.objects.create(user=self.user, name=name)
+        recipe.tags.add(tag)
+        return tag
+
+    def add_ingredient(self, recipe, name):
+        ingredient = Ingredient.objects.create(user=self.user, name=name)
+        recipe.ingredients.add(ingredient)
+        return ingredient
+
+    def filter_test(self, params, expected, unexpected):
+        res = self.client.get(RECIPES_URL, params)
+
+        for recipe in expected:
+            self.assertIn(RecipeSerializer(recipe).data, res.data)
+
+        for recipe in unexpected:
+            self.assertNotIn(RecipeSerializer(recipe).data, res.data)
 
     def test_retrieve_recipes(self):
         """Test retrieving recipe api."""
@@ -281,9 +305,9 @@ class PrivateRecipeApiTests(TestCase):
 
     def test_update_recipe_assign_tag(self):
         """Test assigning an existing tag when updating a recipe."""
-        tag_breakfast = Tag.objects.create(user=self.user, name='Breakfast')
+
         recipe = create_recipe(user=self.user)
-        recipe.tags.add(tag_breakfast)
+        tag_breakfast = self.add_tag(recipe, 'Breakfast')
 
         tag_lunch = Tag.objects.create(user=self.user, name='Lunch')
         payload = {'tags': [{'name': 'Lunch'}]}
@@ -296,9 +320,9 @@ class PrivateRecipeApiTests(TestCase):
 
     def test_clear_recipe_tags(self):
         """Test clearing a recipes tags."""
-        tag = Tag.objects.create(user=self.user, name='Dessert')
+
         recipe = create_recipe(user=self.user)
-        recipe.tags.add(tag)
+        self.add_tag(recipe, 'Dessert')
 
         payload = {'tags': []}
         url = detail_url(recipe.id)
@@ -348,7 +372,7 @@ class PrivateRecipeApiTests(TestCase):
         recipes = Recipe.objects.filter(user=self.user)
         self.assertEqual(recipes.count(), 1)
 
-        recipe = recipes = recipes[0]
+        recipe = recipes[0]
         self.assertEqual(recipe.ingredients.count(), 2)
         self.assertIn(ingredient, recipe.ingredients.all())
         for ingredient in payload['ingredients']:
@@ -374,9 +398,8 @@ class PrivateRecipeApiTests(TestCase):
     def test_update_recipe_assign_ingredient(self):
         """Test assigning an existing ingredient when updating a recipe."""
 
-        ingredient1 = Ingredient.objects.create(user=self.user, name='Pepper')
         recipe = create_recipe(user=self.user)
-        recipe.ingredients.add(ingredient1)
+        ingredient1 = self.add_ingredient(recipe, 'Pepper')
 
         ingredient2 = Ingredient.objects.create(user=self.user, name='Chili')
         payload = {'ingredients': [{'name': 'Chili'}]}
@@ -402,7 +425,7 @@ class PrivateRecipeApiTests(TestCase):
         self.assertEqual(recipe.ingredients.count(), 0)
 
     def test_filter_by_tags(self):
-        """TEst filtering recipes by tags."""
+        """Test filtering recipes by tags."""
         r1 = create_recipe(user=self.user, title='Iranian sour cherry cake')
         r2 = create_recipe(user=self.user, title='Eggplant with curd')
         tag1 = Tag.objects.create(user=self.user, name='Dessert')
@@ -411,18 +434,14 @@ class PrivateRecipeApiTests(TestCase):
         r2.tags.add(tag2)
         r3 = create_recipe(user=self.user, title='Fish and chips')
 
-        params = {'tags': f'{tag1.id},{tag2.id}'}
-        res = self.client.get(RECIPES_URL, params)
-
-        s1 = RecipeSerializer(r1)
-        s2 = RecipeSerializer(r2)
-        s3 = RecipeSerializer(r3)
-        self.assertIn(s1.data, res.data)
-        self.assertIn(s2.data, res.data)
-        self.assertNotIn(s3.data, res.data)
+        self.filter_test(
+            params={'tags': f'{tag1.id},{tag2.id}'},
+            expected=[r1, r2],
+            unexpected=[r3]
+        )
 
     def test_filter_by_ingredients(self):
-        """TEst filtering recipes by ingredients."""
+        """Test filtering recipes by ingredients."""
         r1 = create_recipe(user=self.user, title='Dolma and sour tomato sauce')
         r2 = create_recipe(user=self.user, title='Chicken and rice')
         in1 = Ingredient.objects.create(user=self.user,
@@ -432,28 +451,18 @@ class PrivateRecipeApiTests(TestCase):
         r2.ingredients.add(in2)
         r3 = create_recipe(user=self.user, title='Fries')
 
-        params = {'ingredients': f'{in1.id},{in2.id}'}
-
-        res = self.client.get(RECIPES_URL, params)
-
-        s1 = RecipeSerializer(r1)
-        s2 = RecipeSerializer(r2)
-        s3 = RecipeSerializer(r3)
-        self.assertIn(s1.data, res.data)
-        self.assertIn(s2.data, res.data)
-        self.assertNotIn(s3.data, res.data)
+        self.filter_test(
+            params={'ingredients': f'{in1.id},{in2.id}'},
+            expected=[r1, r2],
+            unexpected=[r3]
+        )
 
 
-class ImageUploadTests(TestCase):
+class ImageUploadTests(BaseRecipeAuthentication):
     """Tests for the image upload API."""
 
     def setUp(self):
-        self.client = APIClient()
-        self.user = get_user_model().objects.create_user(
-            'user@example.com',
-            'password123',
-        )
-        self.client.force_authenticate(self.user)
+        super().setUp()
         self.recipe = create_recipe(user=self.user)
 
     def tearDown(self):
