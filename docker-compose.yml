@@ -1,3 +1,7 @@
+
+# :Z & :z are used for redhat based distros.
+# if the deployment server has not any SELinux mechanism, remove these characters else keep it.
+
 services:
   app:
     build: 
@@ -38,5 +42,3 @@ services:
 volumes:
   dev-db-data:
   dev-static-data:
-
-  
